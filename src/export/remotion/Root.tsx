@@ -26,8 +26,15 @@ export const RemotionRoot: React.FC = () => {
         height={1080}
         defaultProps={{
           color: "#0B99E6",
+          secondaryColor: "#FFFFFF",
           bgColor: "#fafafa",
           icon: "logo" as const,
+          speed: 2,
+          blobPoints: 8,
+          mode: "morph" as const,
+          blobStyle: "bubble" as const,
+          cycleIcons: [] as const,
+          pauseDuration: 0.5,
         }}
       />
     </>
