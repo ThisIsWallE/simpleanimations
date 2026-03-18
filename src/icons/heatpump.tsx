@@ -46,3 +46,26 @@ HeatpumpIcon.displayName = "HeatpumpIcon";
 /** This icon needs runtime conversion — flag it */
 export const heatpumpNeedsConversion = true;
 export const heatpumpViewBox = "0 0 120 80";
+
+/**
+ * Static compound path for Remotion export.
+ * Pre-baked into the 100×100 animation space using the transforms:
+ *   x → x * 0.75 + 5,  y → y * 0.75 + 20,  size → size * 0.75
+ * Includes: outer rect, corner bracket, vertical divider, service panel rect,
+ * service panel lines, feet, fan circle.
+ */
+export const heatpumpStaticPath =
+  // Outer body rect (rounded)
+  "M13.75 23.75 Q8.75 23.75 8.75 27.5 L8.75 72.5 Q8.75 76.25 13.75 76.25 L91.25 76.25 Q96.25 76.25 96.25 72.5 L96.25 27.5 Q96.25 23.75 91.25 23.75 Z " +
+  // Corner bracket
+  "M12.5 38.75 L12.5 27.5 L23.75 27.5 " +
+  // Vertical divider
+  "M61.25 23.75 L61.25 76.25 " +
+  // Service panel rect
+  "M68.75 31.25 L83.75 31.25 Q86 31.25 86 33.5 L86 42.5 Q86 44.75 83.75 44.75 L68.75 44.75 Q66.5 44.75 66.5 42.5 L66.5 33.5 Q66.5 31.25 68.75 31.25 Z " +
+  // Service panel lines
+  "M68.75 53.75 L83.75 53.75 M68.75 59 L83.75 59 M68.75 64.25 L83.75 64.25 M68.75 69.5 L83.75 69.5 M68.75 74.75 L83.75 74.75 " +
+  // Feet
+  "M23.75 76.25 L31.25 76.25 L31.25 78.5 L23.75 78.5 Z M61.25 76.25 L68.75 76.25 L68.75 78.5 L61.25 78.5 Z " +
+  // Fan circle
+  "M35 50 A21 21 0 1 1 34.99 50 Z";

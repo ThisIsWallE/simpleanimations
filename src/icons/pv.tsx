@@ -30,3 +30,7 @@ PvIcon.displayName = "PvIcon";
 /** This icon needs runtime conversion — flag it */
 export const pvNeedsConversion = true;
 export const pvViewBox = "0 0 100 100";
+
+/** Static compound path for Remotion export (no runtime conversion needed) */
+export const pvStaticPath =
+  "M30 35 L70 35 L80 65 L20 65 Z M43.3 35 L40 65 M56.7 35 L60 65 M26.6 45 L73.4 45 M23.3 55 L76.7 55";

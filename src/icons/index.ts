@@ -7,6 +7,8 @@ export { WallboxIcon, wallboxPath } from "./wallbox";
 import { logoPaths } from "./logo";
 import { flashPath } from "./flash";
 import { wallboxPath } from "./wallbox";
+import { heatpumpStaticPath } from "./heatpump";
+import { pvStaticPath } from "./pv";
 
 export type IconName = "logo" | "flash" | "heatpump" | "pv" | "wallbox";
 
@@ -42,3 +44,16 @@ export const iconLabels: Record<IconName, string> = {
 };
 
 export const iconOrder: IconName[] = ["logo", "heatpump", "pv", "wallbox", "flash"];
+
+/**
+ * Static path strings for ALL icons (never null).
+ * For heatpump/pv these are pre-baked compound paths.
+ * Used by Remotion export where runtime MorphSVGPlugin conversion isn't available.
+ */
+export const iconStaticPaths: Record<IconName, string> = {
+  logo: logoPaths.hexagon,
+  flash: flashPath,
+  heatpump: heatpumpStaticPath,
+  pv: pvStaticPath,
+  wallbox: wallboxPath,
+};
