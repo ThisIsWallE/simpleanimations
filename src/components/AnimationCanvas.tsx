@@ -3,6 +3,7 @@ import gsap from "gsap";
 import { MorphSVGPlugin } from "gsap/MorphSVGPlugin";
 import {
   createDotScaleMorphAnimation,
+  createFastCycleAnimation,
   createIdleWobble,
   type IconConfig,
   type AnimationController,
@@ -11,6 +12,7 @@ import { generateAnimatedBlobPath } from "../animations/blob-generator";
 import type { IconName } from "../icons";
 import { iconPaths, iconTypes, iconOrder } from "../icons";
 import { logoPaths } from "../icons/logo";
+import { ExportPanel } from "./ExportPanel";
 
 gsap.registerPlugin(MorphSVGPlugin);
 
@@ -29,11 +31,12 @@ export interface AnimationParams {
   ease: string;
   pauseDuration: number;
   size: number;
-  mode: "morph" | "wobble" | "cycle";
+  mode: "morph" | "wobble" | "cycle" | "fast-cycle";
 }
 
 interface Props {
   params: AnimationParams;
+  captureMode?: boolean;
 }
 
 function isDark(hex: string): boolean {
@@ -45,22 +48,31 @@ function isDark(hex: string): boolean {
   return (r * 299 + g * 587 + b * 114) / 1000 < 128;
 }
 
-// Heatpump BODY only — fan blades removed (they exist as spinning overlay)
+// Maps original heatpump coordinates (120×80 viewBox) into 100×100 animation space.
+// Change these three values to reposition/resize the heatpump — everything else derives.
+const hpX = (x: number) => x * 0.75 + 5;   // horizontal position
+const hpY = (y: number) => y * 0.75 + 20;   // vertical position
+const hpS = (v: number) => v * 0.75;         // sizes (width, height, radius)
+
+// Original circle center in the 120×80 source SVG
+const HP_FAN_ORIG_CX = 40;
+const HP_FAN_ORIG_CY = 40;
+
+// Heatpump BODY only — fan blades removed (they exist as spinning overlay).
+// No <g transform> — coordinates are pre-baked so GSAP sees final positions.
 const HEATPUMP_SVG_MARKUP = `
-<g transform="translate(8, 15) scale(0.7, 0.875)">
-  <rect x="5" y="5" width="110" height="70" rx="5" ry="5"/>
-  <path d="M 10 25 L 10 10 L 25 10"/>
-  <line x1="75" y1="5" x2="75" y2="75"/>
-  <rect x="85" y="15" width="20" height="18" rx="3" ry="3"/>
-  <line x1="85" y1="45" x2="105" y2="45"/>
-  <line x1="85" y1="52" x2="105" y2="52"/>
-  <line x1="85" y1="59" x2="105" y2="59"/>
-  <line x1="85" y1="66" x2="105" y2="66"/>
-  <line x1="85" y1="73" x2="105" y2="73"/>
-  <rect x="25" y="75" width="10" height="3" rx="1" ry="1"/>
-  <rect x="75" y="75" width="10" height="3" rx="1" ry="1"/>
-  <circle cx="40" cy="40" r="28"/>
-</g>
+  <rect x="${hpX(5)}" y="${hpY(5)}" width="${hpS(110)}" height="${hpS(70)}" rx="${hpS(5)}" ry="${hpS(5)}"/>
+  <path d="M ${hpX(10)} ${hpY(25)} L ${hpX(10)} ${hpY(10)} L ${hpX(25)} ${hpY(10)}"/>
+  <line x1="${hpX(75)}" y1="${hpY(5)}" x2="${hpX(75)}" y2="${hpY(75)}"/>
+  <rect x="${hpX(85)}" y="${hpY(15)}" width="${hpS(20)}" height="${hpS(18)}" rx="${hpS(3)}" ry="${hpS(3)}"/>
+  <line x1="${hpX(85)}" y1="${hpY(45)}" x2="${hpX(105)}" y2="${hpY(45)}"/>
+  <line x1="${hpX(85)}" y1="${hpY(52)}" x2="${hpX(105)}" y2="${hpY(52)}"/>
+  <line x1="${hpX(85)}" y1="${hpY(59)}" x2="${hpX(105)}" y2="${hpY(59)}"/>
+  <line x1="${hpX(85)}" y1="${hpY(66)}" x2="${hpX(105)}" y2="${hpY(66)}"/>
+  <line x1="${hpX(85)}" y1="${hpY(73)}" x2="${hpX(105)}" y2="${hpY(73)}"/>
+  <rect x="${hpX(25)}" y="${hpY(75)}" width="${hpS(10)}" height="${hpS(3)}" rx="${hpS(1)}" ry="${hpS(1)}"/>
+  <rect x="${hpX(75)}" y="${hpY(75)}" width="${hpS(10)}" height="${hpS(3)}" rx="${hpS(1)}" ry="${hpS(1)}"/>
+  <circle cx="${hpX(HP_FAN_ORIG_CX)}" cy="${hpY(HP_FAN_ORIG_CY)}" r="${hpS(28)}"/>
 `;
 
 const PV_SVG_MARKUP = `
@@ -71,14 +83,12 @@ const PV_SVG_MARKUP = `
 <line x1="23.3" y1="55" x2="76.7" y2="55"/>
 `;
 
-// Fan center in transformed coordinates: (40*0.7+8, 40*0.875+15) = (36, 50)
-const FAN_CX = 36;
-const FAN_CY = 50;
-// Scale factors for blade geometry: x*0.7, y*0.875
-// Original blade: "M 0 0 C 6 -10, 10 -15, 0 -24 C -10 -15, -6 -10, 0 0 Z"
-// Scaled blade offsets:
-const BX = 0.7;  // x scale
-const BY = 0.875; // y scale
+// Fan center — derived from the SAME mapping as the circle in the body markup
+const FAN_CX = hpX(HP_FAN_ORIG_CX);  // guaranteed to match circle cx
+const FAN_CY = hpY(HP_FAN_ORIG_CY);  // guaranteed to match circle cy
+// Blade geometry scale (matches hpS so blades fit the scaled circle)
+const BX = 0.75;
+const BY = 0.75;
 
 function fanBlade(angle: number): string {
   // Original blade path relative to center, then rotate
@@ -127,7 +137,7 @@ function convertSvgElementsToCompoundPath(containerEl: SVGElement): string {
   }
 }
 
-export function AnimationCanvas({ params }: Props) {
+export function AnimationCanvas({ params, captureMode = false }: Props) {
   const mainPathRef = useRef<SVGPathElement>(null);
   const groupRef = useRef<SVGGElement>(null);
   const overlayPathRef = useRef<SVGPathElement>(null);
@@ -189,6 +199,20 @@ export function AnimationCanvas({ params }: Props) {
         speed: params.speed,
         points: params.blobPoints,
       });
+    } else if (params.mode === "fast-cycle") {
+      const iconList = params.cycleIcons.length > 0 ? params.cycleIcons : iconOrder;
+      const iconConfigs = buildIconConfigs(iconList);
+      animationRef.current = createFastCycleAnimation(
+        { mainPath, groupEl, overlayPath, heatpumpFanEl },
+        iconConfigs,
+        {
+          speed: params.speed,
+          blobPoints: params.blobPoints,
+          ease: params.ease,
+          color: params.color,
+          blobStyle: params.blobStyle,
+        }
+      );
     } else {
       const iconList = params.mode === "cycle"
         ? (params.cycleIcons.length > 0 ? params.cycleIcons : iconOrder)
@@ -252,26 +276,57 @@ export function AnimationCanvas({ params }: Props) {
 
   const initialBlob = generateAnimatedBlobPath(0, { points: params.blobPoints });
   const dark = isDark(params.bgColor);
+  const [showExport, setShowExport] = useState(false);
+
+  const btnStyle = {
+    backgroundColor: dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
+    color: dark ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.4)",
+    border: `1px solid ${dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.1)"}`,
+  };
 
   return (
     <div
       className="relative flex items-center justify-center w-full h-full min-h-[400px] transition-colors duration-300"
       style={{ backgroundColor: params.bgColor }}
     >
-      <DotGrid dark={dark} />
+      {!captureMode && <DotGrid dark={dark} />}
 
-      {/* Pause/Resume button */}
-      <button
-        onClick={togglePause}
-        className="absolute top-4 right-4 z-20 px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
-        style={{
-          backgroundColor: dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
-          color: dark ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.4)",
-          border: `1px solid ${dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.1)"}`,
-        }}
-      >
-        {paused ? "Resume" : "Pause"}
-      </button>
+      {!captureMode && (
+        <>
+          {/* Top-right controls */}
+          <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+            <button
+              onClick={togglePause}
+              className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+              style={btnStyle}
+            >
+              {paused ? "Resume" : "Pause"}
+            </button>
+            <button
+              onClick={() => setShowExport(!showExport)}
+              className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+              style={btnStyle}
+            >
+              Export
+            </button>
+          </div>
+
+          {/* Export panel dropdown */}
+          {showExport && (
+            <div
+              className="absolute top-14 right-4 z-30 w-96 p-4 rounded-lg shadow-lg border"
+              style={{
+                backgroundColor: dark ? "rgba(20,20,30,0.95)" : "rgba(255,255,255,0.97)",
+                borderColor: dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
+                color: dark ? "rgba(255,255,255,0.8)" : undefined,
+                backdropFilter: "blur(12px)",
+              }}
+            >
+              <ExportPanel params={params} dark={dark} />
+            </div>
+          )}
+        </>
+      )}
 
       {/* Hidden SVGs for runtime path conversion */}
       <svg style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}>

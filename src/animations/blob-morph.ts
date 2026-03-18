@@ -281,6 +281,217 @@ export function createDotScaleMorphAnimation(
 }
 
 /**
+ * Fast-cycle animation.
+ * Icons transition directly through a small intermediary (flash or blob)
+ * with no full blob expansion phase. Flow:
+ *   Icon A → shrink to small intermediary → expand to Icon B → shrink → ...
+ */
+export function createFastCycleAnimation(
+  elements: MorphElements,
+  icons: IconConfig[],
+  params: Partial<MorphParams> & { color?: string; blobStyle?: "bubble" | "flash" } = {}
+): AnimationController {
+  const p: MorphParams = {
+    speed: 2,
+    blobPoints: 8,
+    ease: "power2.inOut",
+    pauseDuration: 0.1,
+    ...params,
+  };
+  const color = params.color || "#0B99E6";
+  const blobStyle = params.blobStyle || "bubble";
+  const isFlashBlob = blobStyle === "flash";
+
+  const { mainPath, groupEl, overlayPath, heatpumpFanEl } = elements;
+  let destroyed = false;
+  let paused = false;
+  let morphTimeline: gsap.core.Timeline | null = null;
+  let iconIndex = 0;
+
+  // The small intermediary shape
+  const intermediaryPath = isFlashBlob
+    ? flashPath
+    : generateBlobPath({ points: p.blobPoints, randomness: 0.3, seed: 42 });
+
+  // The minimum scale for the intermediary (visible, not a dot)
+  const minScale = 0.12;
+
+  function setPathStyle(el: SVGPathElement, mode: "fill" | "stroke", c: string, sw: number) {
+    if (mode === "fill") {
+      el.setAttribute("fill", c);
+      el.setAttribute("stroke", "none");
+      el.setAttribute("stroke-width", "0");
+    } else {
+      el.setAttribute("fill", "none");
+      el.setAttribute("stroke", c);
+      el.setAttribute("stroke-width", String(sw));
+      el.setAttribute("stroke-linecap", "round");
+      el.setAttribute("stroke-linejoin", "round");
+    }
+  }
+
+  // Start at full scale showing the first icon
+  const firstIcon = icons[0];
+  mainPath.setAttribute("d", firstIcon.path);
+  if (firstIcon.type === "stroke") {
+    setPathStyle(mainPath, "stroke", color, 2);
+  } else {
+    setPathStyle(mainPath, "fill", color, 0);
+  }
+  gsap.set(groupEl, { scale: 1, svgOrigin: "50 50" });
+  if (overlayPath) gsap.set(overlayPath, { opacity: 0, scale: 0, svgOrigin: "50 55" });
+  if (heatpumpFanEl) gsap.set(heatpumpFanEl, { opacity: 0 });
+
+  // Show first icon's overlays immediately
+  if (firstIcon.hasOverlay && overlayPath) {
+    gsap.set(overlayPath, { opacity: 1, scale: 1, svgOrigin: "50 55" });
+  }
+  if (firstIcon.hasFan && heatpumpFanEl) {
+    gsap.set(heatpumpFanEl, { opacity: 1 });
+  }
+
+  const shrinkDur = () => p.speed * 0.3;
+  const expandDur = () => p.speed * 0.3;
+  const holdDur = () => Math.max(p.speed * 0.15, 0.1);
+
+  function runFastCycle() {
+    if (destroyed || paused) return;
+
+    const currentIcon = icons[iconIndex % icons.length];
+    const nextIcon = icons[(iconIndex + 1) % icons.length];
+    const isCurrentStroke = currentIcon.type === "stroke";
+    const isNextStroke = nextIcon.type === "stroke";
+    const sd = shrinkDur();
+    const ed = expandDur();
+    const hd = holdDur();
+
+    morphTimeline = gsap.timeline({
+      onComplete: () => {
+        if (destroyed) return;
+        iconIndex++;
+        if (!paused) runFastCycle();
+      },
+    });
+
+    // --- Phase A: Shrink current icon → small intermediary ---
+    const shrinkLabel = "shrink";
+
+    // Hide overlays first (fast)
+    if (currentIcon.hasOverlay && overlayPath) {
+      morphTimeline.to(overlayPath, {
+        opacity: 0, scale: 0, svgOrigin: "50 55",
+        duration: sd * 0.5, ease: "power2.in",
+      });
+    }
+    if (currentIcon.hasFan && heatpumpFanEl) {
+      morphTimeline.to(heatpumpFanEl, {
+        opacity: 0, duration: sd * 0.4, ease: "power2.in",
+      }, "<");
+    }
+
+    // Morph + shrink simultaneously
+    morphTimeline.addLabel(shrinkLabel);
+    morphTimeline.to(mainPath, {
+      morphSVG: { shape: intermediaryPath, shapeIndex: "auto" },
+      duration: sd, ease: p.ease,
+    }, shrinkLabel);
+    morphTimeline.to(groupEl, {
+      scale: minScale, svgOrigin: "50 50",
+      duration: sd, ease: "sine.in",
+    }, shrinkLabel);
+
+    // Adjust stroke during shrink
+    if (isCurrentStroke) {
+      morphTimeline.to(mainPath, {
+        attr: { "stroke-width": 8 },
+        duration: sd, ease: "power2.in",
+      }, shrinkLabel);
+    }
+
+    // --- Phase B: Switch style at small scale ---
+    morphTimeline.call(() => {
+      if (isNextStroke) {
+        setPathStyle(mainPath, "stroke", color, 8);
+      } else {
+        setPathStyle(mainPath, "fill", color, 0);
+      }
+    });
+
+    // --- Phase C: Expand intermediary → next icon ---
+    const expandLabel = "expand";
+    morphTimeline.addLabel(expandLabel);
+    morphTimeline.to(mainPath, {
+      morphSVG: { shape: nextIcon.path, shapeIndex: "auto" },
+      duration: ed, ease: p.ease,
+    }, expandLabel);
+    morphTimeline.to(groupEl, {
+      scale: 1, svgOrigin: "50 50",
+      duration: ed, ease: "sine.out",
+    }, expandLabel);
+
+    // Adjust stroke during expand
+    if (isNextStroke) {
+      morphTimeline.to(mainPath, {
+        attr: { "stroke-width": 2 },
+        duration: ed, ease: "power2.out",
+      }, expandLabel);
+    }
+
+    // Show next icon's overlays (during last part of expand)
+    if (nextIcon.hasOverlay && overlayPath) {
+      morphTimeline.to(
+        overlayPath,
+        {
+          opacity: 1, scale: 1, svgOrigin: "50 55",
+          duration: ed * 0.5, ease: "back.out(1.5)",
+        },
+        `${expandLabel}+=${ed * 0.5}`
+      );
+    }
+    if (nextIcon.hasFan && heatpumpFanEl) {
+      morphTimeline.to(
+        heatpumpFanEl,
+        { opacity: 1, duration: ed * 0.4, ease: "power2.out" },
+        `${expandLabel}+=${ed * 0.6}`
+      );
+    }
+
+    // --- Phase D: Brief hold on full icon ---
+    morphTimeline.to(groupEl, { duration: hd });
+  }
+
+  // Brief initial hold on first icon, then start cycling
+  gsap.delayedCall(holdDur(), () => {
+    if (!destroyed && !paused) runFastCycle();
+  });
+
+  return {
+    destroy() {
+      destroyed = true;
+      morphTimeline?.kill();
+      gsap.killTweensOf(groupEl);
+      if (overlayPath) gsap.set(overlayPath, { opacity: 0, scale: 0 });
+      if (heatpumpFanEl) gsap.set(heatpumpFanEl, { opacity: 0 });
+    },
+    pause() {
+      paused = true;
+      morphTimeline?.pause();
+    },
+    resume() {
+      paused = false;
+      if (morphTimeline && morphTimeline.isActive()) {
+        morphTimeline.resume();
+      } else {
+        runFastCycle();
+      }
+    },
+    isPaused() {
+      return paused;
+    },
+  };
+}
+
+/**
  * Idle wobble — fluid blob only, no morph, full scale
  */
 export function createIdleWobble(

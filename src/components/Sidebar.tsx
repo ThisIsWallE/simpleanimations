@@ -1,9 +1,15 @@
 import { useState } from "react";
-import type { AnimationParams } from "./AnimationCanvas";
+import type { AnimationParams, BlobStyle } from "./AnimationCanvas";
 import type { IconName } from "../icons";
 import { iconLabels, iconOrder } from "../icons";
 import { brandColors } from "../lib/colors";
-import { ExportPanel } from "./ExportPanel";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const easeOptions = [
   { label: "Power 2 InOut", value: "power2.inOut" },
@@ -17,6 +23,7 @@ const easeOptions = [
 const defaultParams: AnimationParams = {
   icon: "logo",
   cycleIcons: [...iconOrder],
+  blobStyle: "bubble",
   speed: 2,
   color: brandColors.primary,
   secondaryColor: "#FFFFFF",
@@ -48,17 +55,14 @@ interface Props {
 }
 
 export function Sidebar({ params, onUpdate }: Props) {
-  const isCycle = params.mode === "cycle";
+  const isCycle = params.mode === "cycle" || params.mode === "fast-cycle";
   const isWobble = params.mode === "wobble";
 
   const handleIconClick = (name: IconName) => {
     if (isWobble) return;
-
     if (isCycle) {
-      // Multi-select toggle
       const current = params.cycleIcons;
       if (current.includes(name)) {
-        // Don't allow deselecting the last one
         if (current.length > 1) {
           onUpdate("cycleIcons", current.filter((n) => n !== name));
         }
@@ -66,7 +70,6 @@ export function Sidebar({ params, onUpdate }: Props) {
         onUpdate("cycleIcons", [...current, name]);
       }
     } else {
-      // Single-select
       onUpdate("icon", name);
     }
   };
@@ -82,18 +85,56 @@ export function Sidebar({ params, onUpdate }: Props) {
       <div className="p-5 space-y-6">
         <Section title="Animation">
           <Field label="Mode">
-            <select
+            <Select
               value={params.mode}
-              onChange={(e) => onUpdate("mode", e.target.value as "morph" | "wobble" | "cycle")}
-              className="select-input"
+              onValueChange={(val) => onUpdate("mode", val as AnimationParams["mode"])}
             >
-              <option value="morph">Blob → Icon Morph</option>
-              <option value="cycle">Cycle Selected</option>
-              <option value="wobble">Idle Wobble</option>
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="morph">Blob → Icon Morph</SelectItem>
+                <SelectItem value="cycle">Cycle Selected</SelectItem>
+                <SelectItem value="fast-cycle">Fast Cycle</SelectItem>
+                <SelectItem value="wobble">Idle Wobble</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
 
-          {/* Icon grid — 2 columns like Listen Labs */}
+          <Field label="Blob Style">
+            <Select
+              value={params.blobStyle}
+              onValueChange={(val) => onUpdate("blobStyle", val as BlobStyle)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bubble">Bubble</SelectItem>
+                <SelectItem value="flash">Flash</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label="Easing">
+            <Select
+              value={params.ease}
+              onValueChange={(val) => onUpdate("ease", val)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {easeOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          {/* Icon grid — 2 columns */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs text-gray-600">
@@ -109,7 +150,7 @@ export function Sidebar({ params, onUpdate }: Props) {
               className="grid grid-cols-2 gap-0 border border-gray-200 rounded-lg overflow-hidden"
               style={isWobble ? { opacity: 0.4, pointerEvents: "none" } : undefined}
             >
-              {iconOrder.map((name) => {
+              {iconOrder.map((name, idx) => {
                 const isActive = isCycle
                   ? params.cycleIcons.includes(name)
                   : params.icon === name;
@@ -117,19 +158,13 @@ export function Sidebar({ params, onUpdate }: Props) {
                   <button
                     key={name}
                     onClick={() => handleIconClick(name)}
-                    className={`px-3 py-2.5 text-xs text-center border-b border-r border-gray-200 transition-colors ${
+                    className={`px-3 py-2.5 text-xs text-center transition-colors ${
                       isActive
                         ? "bg-gray-900 text-white font-medium"
                         : "bg-white text-gray-600 hover:bg-gray-50"
+                    } ${idx % 2 === 0 ? "border-r border-gray-200" : ""} ${
+                      idx < iconOrder.length - 2 ? "border-b border-gray-200" : ""
                     }`}
-                    style={{
-                      // Remove right border on right column, bottom border on last row
-                      borderRight: iconOrder.indexOf(name) % 2 === 1 ? "none" : undefined,
-                      borderBottom:
-                        iconOrder.indexOf(name) >= iconOrder.length - 2
-                          ? "none"
-                          : undefined,
-                    }}
                   >
                     {iconLabels[name].replace("Simplestrom ", "")}
                   </button>
@@ -150,31 +185,19 @@ export function Sidebar({ params, onUpdate }: Props) {
             />
           </Field>
 
-          <Field label="Easing">
-            <select
-              value={params.ease}
-              onChange={(e) => onUpdate("ease", e.target.value)}
-              className="select-input"
-            >
-              {easeOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Pause" valueDisplay={params.pauseDuration.toFixed(1) + "s"}>
-            <input
-              type="range"
-              min={0}
-              max={3}
-              step={0.1}
-              value={params.pauseDuration}
-              onChange={(e) => onUpdate("pauseDuration", parseFloat(e.target.value))}
-              className="slider-input"
-            />
-          </Field>
+          {params.mode !== "fast-cycle" && (
+            <Field label="Pause" valueDisplay={params.pauseDuration.toFixed(1) + "s"}>
+              <input
+                type="range"
+                min={0}
+                max={3}
+                step={0.1}
+                value={params.pauseDuration}
+                onChange={(e) => onUpdate("pauseDuration", parseFloat(e.target.value))}
+                className="slider-input"
+              />
+            </Field>
+          )}
         </Section>
 
         <Section title="Blob">
@@ -251,10 +274,6 @@ export function Sidebar({ params, onUpdate }: Props) {
               className="slider-input"
             />
           </Field>
-        </Section>
-
-        <Section title="Export" defaultOpen={false}>
-          <ExportPanel params={params} />
         </Section>
       </div>
     </aside>
